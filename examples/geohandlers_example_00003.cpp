@@ -26,6 +26,9 @@
 #include "bitpit.hpp"
 #include "mimmo_geohandlers.hpp"
 #include "mimmo_manipulators.hpp"
+#if MIMMO_ENABLE_MPI
+#include "mimmo_parallel.hpp"
+#endif
 #include <exception>
 
 using namespace std;
@@ -84,20 +87,34 @@ void test00003() {
     MimmoGeometry * mimmo3 = new MimmoGeometry();
     mimmo3->setIOMode(IOMode::WRITE);
     mimmo3->setWriteDir(".");
-    mimmo3->setWriteFileType(FileType::STL);
+    mimmo3->setWriteFileType(FileType::SURFVTU);
     mimmo3->setWriteFilename("geohandlers_output_00003.0001");
 
     MimmoGeometry * mimmo4 = new MimmoGeometry();
     mimmo4->setIOMode(IOMode::WRITE);
     mimmo4->setWriteDir(".");
-    mimmo4->setWriteFileType(FileType::STL);
+    mimmo4->setWriteFileType(FileType::SURFVTU);
     mimmo4->setWriteFilename("geohandlers_output_00003.0002");
 
     MimmoGeometry * mimmo5 = new MimmoGeometry();
     mimmo5->setIOMode(IOMode::WRITE);
     mimmo5->setWriteDir(".");
-    mimmo5->setWriteFileType(FileType::STL);
+    mimmo5->setWriteFileType(FileType::SURFVTU);
     mimmo5->setWriteFilename("geohandlers_output_00003.0003");
+
+#if MIMMO_ENABLE_MPI
+	/*
+	 * Partition the geometries.
+	 */
+    Partition* partition0 = new Partition();
+    partition0->setPlotInExecution(true);
+    Partition* partition1 = new Partition();
+    partition1->setPlotInExecution(true);
+    partition1->setPartitionMethod(2);
+    Partition* partition2 = new Partition();
+    partition2->setPlotInExecution(true);
+    partition2->setPartitionMethod(2);
+#endif
 
 
     /* Instantiation of two Selection By Map block.
@@ -127,14 +144,14 @@ void test00003() {
      */
     MRBF* mrbf1 = new MRBF();
     mrbf1->setMode(MRBFSol::NONE);
-    mrbf1->setSupportRadius(0.4);
+    mrbf1->setSupportRadiusValue(0.3);
     mrbf1->setPlotInExecution(true);
     mrbf1->setNode(rbfNodes1);
     mrbf1->setDisplacements(displ1);
 
     MRBF* mrbf2 = new MRBF();
     mrbf2->setMode(MRBFSol::NONE);
-    mrbf2->setSupportRadius(0.4);
+    mrbf2->setSupportRadiusValue(0.3);
     mrbf2->setPlotInExecution(true);
     mrbf2->setNode(rbfNodes2);
     mrbf2->setDisplacements(displ2);
@@ -179,11 +196,24 @@ void test00003() {
 
     /* Setup pin connections.
      */
+#if MIMMO_ENABLE_MPI
+	addPin(mimmo0, partition0, M_GEOM, M_GEOM);
+	addPin(mimmo1, partition1, M_GEOM, M_GEOM);
+	addPin(mimmo2, partition2, M_GEOM, M_GEOM);
+    addPin(partition0, mapSel1, M_GEOM, M_GEOM);
+    addPin(partition0, mapSel2, M_GEOM, M_GEOM);
+    addPin(partition0, applier, M_GEOM, M_GEOM);
+    addPin(partition1, mapSel1, M_GEOM, M_GEOM2);
+    addPin(partition2, mapSel2, M_GEOM, M_GEOM2);
+//    addPin(mimmo1, mapSel1, M_GEOM, M_GEOM2);
+//    addPin(mimmo2, mapSel2, M_GEOM, M_GEOM2);
+#else
     addPin(mimmo0, mapSel1, M_GEOM, M_GEOM);
     addPin(mimmo0, mapSel2, M_GEOM, M_GEOM);
     addPin(mimmo0, applier, M_GEOM, M_GEOM);
     addPin(mimmo1, mapSel1, M_GEOM, M_GEOM2);
     addPin(mimmo2, mapSel2, M_GEOM, M_GEOM2);
+#endif
     addPin(mapSel1, mrbf1, M_GEOM, M_GEOM);
     addPin(mapSel2, mrbf2, M_GEOM, M_GEOM);
     addPin(mimmo0, recon, M_GEOM, M_GEOM);
@@ -211,6 +241,11 @@ void test00003() {
     ch0.addObject(mimmo0);
     ch0.addObject(mimmo1);
     ch0.addObject(mimmo2);
+#if MIMMO_ENABLE_MPI
+	ch0.addObject(partition0);
+	ch0.addObject(partition1);
+	ch0.addObject(partition2);
+#endif
     ch0.addObject(mapSel1);
     ch0.addObject(mapSel2);
     ch0.addObject(mrbf1);
@@ -235,6 +270,11 @@ void test00003() {
     delete mimmo0;
     delete mimmo1;
     delete mimmo2;
+#if MIMMO_ENABLE_MPI
+    delete partition0;
+    delete partition1;
+    delete partition2;
+#endif
     delete mimmo3;
     delete mimmo4;
     delete mimmo5;
@@ -252,6 +292,11 @@ void test00003() {
     mimmo0 = NULL;
     mimmo1 = NULL;
     mimmo2 = NULL;
+#if MIMMO_ENABLE_MPI
+    partition0 = NULL;
+    partition1 = NULL;
+    partition2 = NULL;
+#endif
     mimmo3 = NULL;
     mimmo4 = NULL;
     mimmo5 = NULL;

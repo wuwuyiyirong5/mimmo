@@ -25,6 +25,9 @@
 
 #include "mimmo_core.hpp"
 #include "mimmo_iogeneric.hpp"
+#if MIMMO_ENABLE_MPI
+#include "mimmo_parallel.hpp"
+#endif
 #include "bitpit.hpp"
 #include <exception>
 using namespace std;
@@ -51,13 +54,20 @@ void test00001() {
 	/* Creation of mimmo containers.
 	 */
 	MimmoGeometry * mimmo0 = new MimmoGeometry();
-
 	mimmo0->setIOMode(IOMode::READ);
 	mimmo0->setReadDir("geodata");
 	mimmo0->setReadFileType(FileType::STL);
 	mimmo0->setReadFilename("plane3");
-
 	mimmo0->execute();
+
+#if MIMMO_ENABLE_MPI
+	/*
+	 * Partition the geometry.
+	 */
+    Partition* partition = new Partition();
+    partition->setGeometry(mimmo0->getGeometry());
+    partition->execute();
+#endif
 
 	/*
 	 * Creation of a synthetic point field.
@@ -138,6 +148,9 @@ void test00001() {
 	/* Clean up & exit;
 	 */
 	delete mimmo0;
+#if MIMMO_ENABLE_MPI
+	delete partition;
+#endif
 	return;
 
 }
@@ -148,7 +161,7 @@ int main(int argc, char *argv[]) {
 	BITPIT_UNUSED(argc);
 	BITPIT_UNUSED(argv);
 
-#if MIMMO_ENABLE_MPI==1
+#if MIMMO_ENABLE_MPI
 	MPI_Init(&argc, &argv);
 
 	{
@@ -167,11 +180,11 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 
-#if MIMMO_ENABLE_MPI==1
+#if MIMMO_ENABLE_MPI
 	}
 
 	MPI_Finalize();
 #endif
 
-	return (1);
+	return (0);
 }

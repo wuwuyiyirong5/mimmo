@@ -25,6 +25,9 @@
 
 #include "bitpit.hpp"
 #include "mimmo_geohandlers.hpp"
+#if MIMMO_ENABLE_MPI
+#include "mimmo_parallel.hpp"
+#endif
 #include <exception>
 
 using namespace std;
@@ -70,6 +73,13 @@ void test00001() {
     mimmo1->setWriteFileType(FileType::STL);
     mimmo1->setWriteFilename("geohandlers_output_00000.0001");
 
+#if MIMMO_ENABLE_MPI
+	/*
+	 * Partition the geometry.
+	 */
+    Partition* partition = new Partition();
+#endif
+
     Lattice * latt3 = new Lattice();
     latt3->setShape(ShapeType::CYLINDER);
     latt3->setOrigin({{0.5, 0.0, 0.0}});
@@ -90,13 +100,21 @@ void test00001() {
 
     /* Setup pin connections.
      */
+#if MIMMO_ENABLE_MPI
+    pin::addPin(mimmo0, partition, M_GEOM, M_GEOM);
+    pin::addPin(partition, sel3, M_GEOM, M_GEOM);
+#else
     pin::addPin(mimmo0, sel3, M_GEOM, M_GEOM);
+#endif
     pin::addPin(sel3, mimmo1, M_GEOM, M_GEOM);
 
     /* Setup execution chain.
      */
     Chain ch0;
     ch0.addObject(mimmo0);
+#if MIMMO_ENABLE_MPI
+    ch0.addObject(partition);
+#endif
     ch0.addObject(sel3);
     ch0.addObject(mimmo1);
 
@@ -110,10 +128,16 @@ void test00001() {
 	delete sel3;
     delete latt3;
     delete mimmo0;
+#if MIMMO_ENABLE_MPI
+    delete partition;
+#endif
     delete mimmo1;
 
     sel3 = NULL;
     mimmo0 = NULL;
+#if MIMMO_ENABLE_MPI
+    partition = NULL;
+#endif
     mimmo1 = NULL;
 
 	return;

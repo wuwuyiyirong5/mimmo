@@ -25,6 +25,9 @@
 
 #include "bitpit.hpp"
 #include "mimmo_geohandlers.hpp"
+#if MIMMO_ENABLE_MPI
+    #include <mimmo_parallel.hpp>
+#endif
 #include <exception>
 
 using namespace std;
@@ -76,6 +79,13 @@ void test00001() {
     mimmo2->setWriteFileType(FileType::STL);
     mimmo2->setWriteFilename("geohandlers_output_00001.0002");
 
+#if MIMMO_ENABLE_MPI
+	/*
+	 * Partition the geometry.
+	 */
+    Partition* partition = new Partition();
+#endif
+
     /* Instantiation of a Selection By Box block.
      * Setup of span and origin of cube.
      */
@@ -92,6 +102,9 @@ void test00001() {
 
     /* Setup pin connections.
      */
+#if MIMMO_ENABLE_MPI
+    pin::addPin(mimmo0, partition, M_GEOM, M_GEOM);
+#endif
     pin::addPin(mimmo0, boxSel, M_GEOM, M_GEOM);
     pin::addPin(mimmo0, sphSel, M_GEOM, M_GEOM);
     pin::addPin(boxSel, mimmo1, M_GEOM, M_GEOM);
@@ -101,6 +114,9 @@ void test00001() {
      */
     Chain ch0;
     ch0.addObject(mimmo0);
+#if MIMMO_ENABLE_MPI
+    ch0.addObject(partition);
+#endif
     ch0.addObject(boxSel);
     ch0.addObject(sphSel);
     ch0.addObject(mimmo1);
@@ -116,12 +132,18 @@ void test00001() {
 	delete boxSel;
 	delete sphSel;
     delete mimmo0;
+#if MIMMO_ENABLE_MPI
+	delete partition;
+#endif
     delete mimmo1;
     delete mimmo2;
 
     boxSel = NULL;
     sphSel = NULL;
     mimmo0 = NULL;
+#if MIMMO_ENABLE_MPI
+	partition = NULL;
+#endif
     mimmo1 = NULL;
     mimmo2 = NULL;
 

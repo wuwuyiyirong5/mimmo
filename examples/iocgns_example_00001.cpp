@@ -180,17 +180,23 @@ void example00001() {
     addPin(cgnsI, applier, M_GEOM, M_GEOM)  ;
 #endif
 
+
+#if MIMMO_ENABLE_MPI
     addPin(partition, extrF, M_GEOM2, M_GEOM)  ;
     addPin(prop, extrF, M_GDISPLS, M_VECTORFIELD)  ;
     addPin(extrF, applierS, M_VECTORFIELD, M_GDISPLS)  ;
     addPin(partition, applierS, M_GEOM2, M_GEOM)  ;
 
-#if MIMMO_ENABLE_MPI
     addPin(applier, serialize, M_GEOM, M_GEOM)  ;
     addPin(applierS, serialize, M_GEOM, M_GEOM2)  ;
     addPin(serialize, cgnsO, M_GEOM, M_GEOM)  ;
     addPin(serialize, cgnsO, M_GEOM2, M_GEOM2)  ;
 #else
+    addPin(cgnsI, extrF, M_GEOM2, M_GEOM)  ;
+    addPin(prop, extrF, M_GDISPLS, M_VECTORFIELD)  ;
+    addPin(extrF, applierS, M_VECTORFIELD, M_GDISPLS)  ;
+    addPin(cgnsI, applierS, M_GEOM2, M_GEOM)  ;
+
     addPin(applier, cgnsO, M_GEOM, M_GEOM)  ;
     addPin(applierS, cgnsO, M_GEOM, M_GEOM2)  ;
 #endif

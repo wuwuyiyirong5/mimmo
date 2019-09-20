@@ -144,14 +144,14 @@ void test00003() {
      */
     MRBF* mrbf1 = new MRBF();
     mrbf1->setMode(MRBFSol::NONE);
-    mrbf1->setSupportRadiusValue(0.3);
+    mrbf1->setSupportRadius(0.4);
     mrbf1->setPlotInExecution(true);
     mrbf1->setNode(rbfNodes1);
     mrbf1->setDisplacements(displ1);
 
     MRBF* mrbf2 = new MRBF();
     mrbf2->setMode(MRBFSol::NONE);
-    mrbf2->setSupportRadiusValue(0.3);
+    mrbf2->setSupportRadius(0.4);
     mrbf2->setPlotInExecution(true);
     mrbf2->setNode(rbfNodes2);
     mrbf2->setDisplacements(displ2);

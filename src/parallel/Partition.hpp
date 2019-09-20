@@ -36,7 +36,8 @@ namespace mimmo{
  */
 enum class PartitionMethod{
     SERIALIZE = 0, /**< Communicate the whole mesh to rank 0*/
-    	    PARTGEOM = 1 /**< Partition a serial geometry via geometric space filling curve*/
+    	    PARTGEOM = 1, /**< Partition a serial geometry via geometric space filling curve from rank 0*/
+    	    DISTRIBUTE = 2 /**< Distribute duplicates of a geometry to all processes by collecting the partitions*/
 };
 
 /*!
@@ -136,6 +137,7 @@ private:
     void updateBoundaryVerticesID();
 #if MIMMO_ENABLE_MPI
     void serialize(MimmoObject* & geometry, bool isBoundary);
+    void distribute(MimmoObject* & geometry);
 #endif
 
 

@@ -170,7 +170,7 @@ Partition::setPartition(std::unordered_map<long, int> partition){
  */
 void
 Partition::setPartitionMethod(PartitionMethod mode){
-	if (mode != PartitionMethod::PARTGEOM && mode != PartitionMethod::SERIALIZE)
+	if (mode != PartitionMethod::PARTGEOM && mode != PartitionMethod::SERIALIZE && mode != PartitionMethod::DISTRIBUTE)
 		throw std::runtime_error(m_name + " : partition method not allowed");
 
 	m_mode = mode;
@@ -183,7 +183,7 @@ Partition::setPartitionMethod(PartitionMethod mode){
  */
 void
 Partition::setPartitionMethod(int mode){
-	if (mode != 1 && mode != 0)
+	if (mode != 1 && mode != 0 && mode != 2)
 		throw std::runtime_error(m_name + " : partition method not allowed");
 
 	m_mode = PartitionMethod(mode);
@@ -311,6 +311,18 @@ Partition::execute(){
 				}
 			}
 		}
+
+		//Distribute the whole geometry on all the process
+		if (m_mode == PartitionMethod::DISTRIBUTE)
+		{
+			distribute(m_geometry);
+			if (getBoundaryGeometry() != nullptr){
+				if (getGeometry()->getType() == 2 && getBoundaryGeometry()->getType() == 1){
+					distribute(m_boundary);
+				}
+			}
+		}
+
 	}
 };
 
@@ -601,11 +613,13 @@ Partition::plotOptionalResults(){
     }
     getGeometry()->getPatch()->getVTK().setDirectory(dir);
     getGeometry()->getPatch()->getVTK().setName(name);
+    getGeometry()->getPatch()->getVTK().setCounter(getId());
     getGeometry()->getPatch()->write();
 
 	if (getBoundaryGeometry() != nullptr){
         getBoundaryGeometry()->getPatch()->getVTK().setDirectory(dir);
         getBoundaryGeometry()->getPatch()->getVTK().setName(name+"Boundary");
+        getBoundaryGeometry()->getPatch()->getVTK().setCounter(getId());
 		getBoundaryGeometry()->getPatch()->write();
 	}
 }
@@ -831,6 +845,171 @@ Partition::serialize(MimmoObject* & geometry, bool isBoundary)
 
 }
 
+
+/*!
+ * Distribution of a geometry to all the processors. The geometry is duplcated in memory nprocs times.
+ */
+void
+Partition::distribute(MimmoObject* & geometry){
+
+	if (getTotalProcs() > 1){
+
+		//MPI version
+		std::unique_ptr<MimmoObject> distributedgeometry = std::move(std::unique_ptr<MimmoObject>(new MimmoObject(geometry->getType())));
+
+		//fill serialized geometry
+		for (bitpit::Vertex &vertex : geometry->getVertices()){
+			long vertexId = vertex.getId();
+			if (geometry->isPointInterior(vertexId)){
+				distributedgeometry->addVertex(vertex, vertexId);
+			}
+		}
+		for (bitpit::Cell &cell : geometry->getCells()){
+			if (cell.isInterior()){
+				distributedgeometry->addCell(cell, cell.getId());
+			}
+		}
+
+
+		//Receive vertices and cells
+		for (int sendRank=0; sendRank<m_nprocs; sendRank++){
+
+			if (m_rank != sendRank){
+
+				// Vertex data
+				long vertexBufferSize;
+				MPI_Recv(&vertexBufferSize, 1, MPI_LONG, sendRank, 100, m_communicator, MPI_STATUS_IGNORE);
+
+				bitpit::IBinaryStream vertexBuffer(vertexBufferSize);
+				MPI_Recv(vertexBuffer.data(), vertexBuffer.getSize(), MPI_CHAR, sendRank, 110, m_communicator, MPI_STATUS_IGNORE);
+
+				// Cell data
+				long cellBufferSize;
+				MPI_Recv(&cellBufferSize, 1, MPI_LONG, sendRank, 200, m_communicator, MPI_STATUS_IGNORE);
+
+				bitpit::IBinaryStream cellBuffer(cellBufferSize);
+				MPI_Recv(cellBuffer.data(), cellBuffer.getSize(), MPI_CHAR, sendRank, 210, m_communicator, MPI_STATUS_IGNORE);
+
+				// There are no duplicate in the received vertices, but some of them may
+				// be already a local vertex of a interface cell.
+				//TODO GENERALIZE IT
+				//NOTE! THE COHINCIDENT VERTICES ARE SUPPOSED TO HAVE THE SAME ID!!!!
+				long nRecvVertices;
+				vertexBuffer >> nRecvVertices;
+				distributedgeometry->getPatch()->reserveVertices(distributedgeometry->getPatch()->getVertexCount() + nRecvVertices);
+
+				// Do not add the vertices with Id already in serialized geometry
+				for (long i = 0; i < nRecvVertices; ++i) {
+					bitpit::Vertex vertex;
+					vertexBuffer >> vertex;
+					long vertexId = vertex.getId();
+
+					if (!distributedgeometry->getVertices().exists(vertexId)){
+						distributedgeometry->addVertex(vertex, vertexId);
+					}
+				}
+
+				//Receive and add all Cells
+				long nReceivedCells;
+				cellBuffer >> nReceivedCells;
+				distributedgeometry->getPatch()->reserveCells(distributedgeometry->getPatch()->getCellCount() + nReceivedCells);
+
+				for (long i = 0; i < nReceivedCells; ++i) {
+					// Cell data
+					bitpit::Cell cell;
+					cellBuffer >> cell;
+
+					long cellId = cell.getId();
+
+					// Add cell
+					distributedgeometry->addCell(cell, cellId);
+
+				}
+			}
+			else{
+
+				//Send local vertices and local cells to ranks
+
+				//
+				// Send vertex data
+				//
+				bitpit::OBinaryStream vertexBuffer;
+				long vertexBufferSize = 0;
+				long nVerticesToCommunicate = 0;
+
+				// Fill buffer with vertex data
+				vertexBufferSize += sizeof(long);
+				for (long vertexId : geometry->getVertices().getIds()){
+					if (geometry->isPointInterior(vertexId)){
+						vertexBufferSize += geometry->getVertices()[vertexId].getBinarySize();
+						nVerticesToCommunicate++;
+					}
+				}
+				vertexBuffer.setSize(vertexBufferSize);
+
+				vertexBuffer << nVerticesToCommunicate;
+				for (long vertexId : geometry->getVertices().getIds()){
+					if (geometry->isPointInterior(vertexId)){
+						vertexBuffer << geometry->getVertices()[vertexId];
+					}
+				}
+
+				for (int recvRank=0; recvRank<m_nprocs; recvRank++){
+
+					if (m_rank != recvRank){
+
+						// Communication
+						MPI_Send(&vertexBufferSize, 1, MPI_LONG, recvRank, 100, m_communicator);
+						MPI_Send(vertexBuffer.data(), vertexBuffer.getSize(), MPI_CHAR, recvRank, 110, m_communicator);
+
+					}
+				}
+
+				//
+				// Send cell data
+				//
+				bitpit::OBinaryStream cellBuffer;
+				long cellBufferSize = 0;
+				long nCellsToCommunicate = 0;
+
+				// Fill the buffer with cell data
+				cellBufferSize += sizeof(long);
+				for (const long cellId : geometry->getCellsIds()) {
+					if (geometry->getCells()[cellId].isInterior()){
+						cellBufferSize += sizeof(int) + sizeof(int) + geometry->getCells()[cellId].getBinarySize();
+						nCellsToCommunicate++;
+					}
+				}
+				cellBuffer.setSize(cellBufferSize);
+
+				cellBuffer << nCellsToCommunicate;
+				for (const long cellId : geometry->getCellsIds()) {
+					if (geometry->getCells()[cellId].isInterior()){
+						const bitpit::Cell &cell = geometry->getCells()[cellId];
+						// Cell data
+						cellBuffer << cell;
+					}
+				}
+
+				for (int recvRank=0; recvRank<m_nprocs; recvRank++){
+
+					if (m_rank != recvRank){
+						// Communication
+						MPI_Send(&cellBufferSize, 1, MPI_LONG, recvRank, 200, m_communicator);
+						MPI_Send(cellBuffer.data(), cellBuffer.getSize(), MPI_CHAR, recvRank, 210, m_communicator);
+
+					}
+				}
+
+			}
+
+		}// end external sendrank loop
+
+		geometry = distributedgeometry->clone().release();
+
+	}
+
+}
 #endif
 
 }

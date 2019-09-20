@@ -246,26 +246,30 @@ GenericSelection::execute(){
 
     if (m_topo != 3){
 
-        livector1D vertExtracted = getGeometry()->getVertexFromCellList(extracted);
-        for(const auto & idV : vertExtracted){
-            temp->addVertex(getGeometry()->getVertexCoords(idV), idV);
-        }
+    	if (extracted.size()){
 
-        int rank;
-        for(const auto & idCell : extracted){
-            bitpit::Cell & cell = getGeometry()->getPatch()->getCell(idCell);
-            rank = -1;
+    		livector1D vertExtracted = getGeometry()->getVertexFromCellList(extracted);
+    		for(const auto & idV : vertExtracted){
+    			temp->addVertex(getGeometry()->getVertexCoords(idV), idV);
+    		}
+
+    		int rank;
+    		for(const auto & idCell : extracted){
+    			bitpit::Cell & cell = getGeometry()->getPatch()->getCell(idCell);
+    			rank = -1;
 #if MIMMO_ENABLE_MPI
-            rank = getGeometry()->getPatch()->getCellRank(idCell);
+    			rank = getGeometry()->getPatch()->getCellRank(idCell);
 #endif
-            temp->addCell(cell, idCell, rank);
-        }
+    			temp->addCell(cell, idCell, rank);
+    		}
+
+    	}
 
     }else{
 
-        for(const auto & idV : extracted){
-            temp->addVertex(getGeometry()->getVertexCoords(idV),idV);
-        }
+    	for(const auto & idV : extracted){
+    		temp->addVertex(getGeometry()->getVertexCoords(idV),idV);
+    	}
 
     }
 
@@ -275,6 +279,8 @@ GenericSelection::execute(){
         temp->setPIDName(val, originalmap[val]);
     }
     m_subpatch = std::move(temp);
+
+
 
 #if MIMMO_ENABLE_MPI
     // if the mesh is not  a point cloud
@@ -289,6 +295,7 @@ GenericSelection::execute(){
         m_subpatch->setPartitioned();
     }
 #endif
+
 };
 
 /*!

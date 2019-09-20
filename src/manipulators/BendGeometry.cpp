@@ -308,6 +308,8 @@ BendGeometry::apply(){
 	getGeometry()->updatePointGhostExchangeInfo();
 #endif
 
+	getGeometry()->getPatch()->updateBoundingBox(true);
+
 }
 
 /*!

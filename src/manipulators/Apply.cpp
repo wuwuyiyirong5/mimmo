@@ -154,6 +154,8 @@ Apply::execute(){
 	getGeometry()->updatePointGhostExchangeInfo();
 #endif
 
+	getGeometry()->getPatch()->updateBoundingBox(true);
+
 };
 
 

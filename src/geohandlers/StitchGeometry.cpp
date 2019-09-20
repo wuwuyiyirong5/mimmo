@@ -197,17 +197,6 @@ StitchGeometry::execute(){
     }
 
     std::unique_ptr<MimmoObject> dum(new MimmoObject(m_topo));
-#if MIMMO_ENABLE_MPI
-    if(m_nprocs > 1){
-        //TODO you need a strategy to stitch together partioned mesh, keeping a unique id
-        //throughout cells and ids. For example, communicate the number of Global cells and Global verts
-        //(or min/max ids) of each patch to all communicators, and using them to organize offsets
-        //for safe inserting elements.
-        (*m_log)<<"WARNING "<< m_name<<" : stitching not available yet for MPI version with procs > 1"<<std::endl;
-        m_patch = std::move(dum);
-        return;
-    }
-#endif
 
     long nCells = 0;
     long nVerts = 0;
@@ -247,6 +236,7 @@ StitchGeometry::execute(){
         long vId, cId;
         long PID;
         bitpit::ElementType eltype;
+        int rank;
 
         for(auto &obj : m_extgeo){
 
@@ -270,6 +260,10 @@ StitchGeometry::execute(){
                 cId = cc.getId();
                 PID = cc.getPID() + map_pidstart[obj.first];
                 eltype = cc.getType();
+                rank = -1;
+#if MIMMO_ENABLE_MPI
+                rank = obj.first->getPatch()->getCellRank(cId);
+#endif
                 //get the local connectivity and update with new vertex numbering;
                 livector1D conn = obj.first->getCellConnectivity(cId);
                 livector1D connloc(conn.size());
@@ -299,7 +293,7 @@ StitchGeometry::execute(){
                         ++ic;
                     }
                 }
-                dum->addConnectedCell(connloc, eltype, PID, cC);
+                dum->addConnectedCell(connloc, eltype, PID, cC, rank);
                 //update map;
                 cC++;
             }
@@ -313,6 +307,21 @@ StitchGeometry::execute(){
 
     m_patch = std::move(dum);
     m_patch->cleanGeometry();
+
+#if MIMMO_ENABLE_MPI
+    // if the mesh is not  a point cloud
+    if (m_topo != 3){
+        //delete orphan ghosts
+    	m_patch->buildAdjacencies();
+    	m_patch->deleteOrphanGhostCells();
+        if(m_patch->getPatch()->countOrphanVertices() > 0){
+        	m_patch->getPatch()->deleteOrphanVertices();
+        }
+        //fixed ghosts you will claim this patch partitioned.
+        m_patch->setPartitioned();
+    }
+#endif
+
 }
 
 /*!
@@ -379,7 +388,6 @@ void StitchGeometry::flushSectionXML(bitpit::Config::Section & slotXML, std::str
 void
 StitchGeometry::plotOptionalResults(){
     if(m_patch.get() == NULL) return;
-    if(isEmpty()) return;
     std::string name = m_outputPlot +"/"+ m_name + "_" + std::to_string(getId()) +  "_Patch";
     m_patch->getPatch()->write(name);
 }

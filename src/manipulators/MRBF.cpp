@@ -561,7 +561,7 @@ MRBF::execute(){
 	double bboxDiag;
 	{
 		darray3E pmin, pmax;
-		container->getPatch()->getBoundingBox(pmin, pmax);
+		container->getBoundingBox(pmin, pmax);
 		bboxDiag= norm2(pmax - pmin);
 	}
 
@@ -600,10 +600,8 @@ MRBF::execute(){
 	const double radius = distance;
 	RBF::setSupportRadius(radius);
 
-
 	if (m_solver == MRBFSol::WHOLE)    solve();
 	if (m_solver == MRBFSol::GREEDY)    greedy(m_tol);
-
 
 	dvector1D displ;
 	darray3E adispl;
@@ -647,6 +645,8 @@ MRBF::apply(){
 #if MIMMO_ENABLE_MPI
 	getGeometry()->updatePointGhostExchangeInfo();
 #endif
+
+	getGeometry()->getPatch()->updateBoundingBox(true);
 
 }
 

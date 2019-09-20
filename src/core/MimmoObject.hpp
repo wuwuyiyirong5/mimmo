@@ -269,7 +269,7 @@ public:
     liimap	    getMapCell(bool withghosts=true);
     liimap      getMapCellInv(bool withghosts=true);
 
-    void        getBoundingBox(std::array<double,3> & pmin, std::array<double,3> & pmax);
+    void        getBoundingBox(std::array<double,3> & pmin, std::array<double,3> & pmax, bool global = true);
     void        buildSkdTree(int value = 1);
     void        buildKdTree();
     void		buildPatchInfo();

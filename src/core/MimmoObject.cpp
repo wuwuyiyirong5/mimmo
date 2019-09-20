@@ -1836,6 +1836,8 @@ MimmoObject::setPartitioned()
     buildPatchInfo();
     updatePointGhostExchangeInfo();
 
+    getPatch()->updateBoundingBox(true);
+
 }
 
 /*!
@@ -2707,9 +2709,10 @@ bool MimmoObject::checkCellConnCoherence(const bitpit::ElementType & type, const
  * Evaluate axis aligned bounding box of the current MimmoObject.
  * \param[out] pmin lowest bounding box point
  * \param[out] pmax highest bounding box point
+ * \param[in] global true if global bounding box is required
  */
-void MimmoObject::getBoundingBox(std::array<double,3> & pmin, std::array<double,3> & pmax){
-	getPatch()->getBoundingBox(pmin,pmax);
+void MimmoObject::getBoundingBox(std::array<double,3> & pmin, std::array<double,3> & pmax, bool global){
+	getPatch()->getBoundingBox(global, pmin, pmax);
 	return;
 }
 

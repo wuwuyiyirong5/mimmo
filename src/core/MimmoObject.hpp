@@ -148,7 +148,7 @@ protected:
 	std::unordered_map<long, bool> m_isPointInterior;						/**<True or False if the current rank is considered the real owner (the lower rank for shared points) or not of the id-th (key) point. */
 	std::unordered_map<long, long> m_pointConsecutiveId;					/**<Map id->consecutive id for vertices. */
 	bool						m_pointGhostExchangeInfoSync;				/**<Track correct building of point ghost exchange info along with geometry modifications */
-
+	bool						m_isdistributed;							/**<True if the geometry is distributed entirely (duplicated) on each process.*/
 #endif
 
  	bitpit::PatchNumberingInfo	m_patchInfo;			/**<Patch Numbering Info structure.*/
@@ -227,6 +227,8 @@ public:
     bool cleanParallelPointGhostExchangeInfoSync();
     void setPartitioned();
     void deleteOrphanGhostCells();
+    bool isDistributed();
+    void setDistributed(bool isdistributed = true);
 #endif
 
     bool        addVertex(const darray3E & vertex, long idtag = bitpit::Vertex::NULL_ID);

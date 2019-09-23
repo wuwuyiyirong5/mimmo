@@ -1006,6 +1006,7 @@ Partition::distribute(MimmoObject* & geometry){
 		}// end external sendrank loop
 
 		geometry = distributedgeometry->clone().release();
+		geometry->setDistributed();
 
 	}
 

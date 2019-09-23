@@ -602,6 +602,7 @@ MimmoObject::MimmoObject(const MimmoObject & other){
 	MPI_Comm_dup(other.m_communicator, &m_communicator);
 	m_nglobalvertices = other.m_nglobalvertices;
 	m_pointGhostExchangeInfoSync = false;
+	m_isdistributed = other.m_isdistributed;
 #endif
 
 	m_pointConnectivitySync = false;
@@ -645,6 +646,7 @@ void MimmoObject::swap(MimmoObject & x) noexcept
 	std::swap(m_rank, x.m_rank);
 	std::swap(m_nprocs, x.m_nprocs);
 	std::swap(m_nglobalvertices, x.m_nglobalvertices);
+	std::swap(m_isdistributed, x.m_isdistributed);
 	m_pointGhostExchangeInfoSync = false;
 #endif
 	m_pointConnectivitySync = false; //point connectivity is not copied
@@ -686,6 +688,7 @@ MimmoObject::initializeParallel(){
 	MPI_Comm_size(m_communicator, &m_nprocs);
 
 	m_pointGhostExchangeInfoSync = false;
+	m_isdistributed = false;
 
 }
 #endif
@@ -1898,6 +1901,26 @@ void MimmoObject::deleteOrphanGhostCells(){
 
     MPI_Barrier(m_communicator);
 }
+
+/*!
+    Get true/false if the patch object is distributed entirely (duplicated) over the processes.
+    \return True if the geometry is duplicated over the processes and not partitioned or serialized.
+ */
+bool MimmoObject::isDistributed()
+{
+	return m_isdistributed;
+}
+
+
+/*!
+    Set if the patch object is distributed entirely (duplicated) over the processes.
+    \param[in] isdistributed True/false if the geometry is duplicated or not over the processes.
+ */
+void MimmoObject::setDistributed(bool isdistributed)
+{
+	m_isdistributed = isdistributed;
+}
+
 
 #endif
 

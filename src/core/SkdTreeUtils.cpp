@@ -42,24 +42,51 @@ namespace skdTreeUtils{
  * is found return a default value of distance equal to 1.0e+18;
  * \param[in] P_ Pointer to coordinates of input point.
  * \param[in] bvtree_ Pointer to Boundary Volume Hierarchy tree that stores the geometry.
- * \param[out] id Label of the element found as minimum distance element in the bv-tree.
+ * \param[out] id Label of the element found as minimum distance element in the bv-tree. When parallel it returns bitpit::Cell::NULL_ID if the element is on another process.
  * \param[in] r Length of the side of the box or radius of the sphere used to search. (The algorithm checks
  * every element encountered inside the box/sphere).
+ * \param[in] global if true the minimum distance over all the processes is returned
  * \return Unsigned distance of the input point from the patch in the bv-tree.
  */
-double distance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, double &r)
+double distance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, double &r, bool global)
 {
 
-    double h = 1.E+18;
-    if(!bvtree_ ){
-        throw std::runtime_error("Invalid use of skdTreeUtils::distance method: a void tree is detected.");
-    }
-    if(!dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))){
-        throw std::runtime_error("Invalid use of skdTreeUtils::distance method: a not surface patch tree is detected.");
-    }
+	double h = 1.E+18;
+	if(!bvtree_ ){
+		throw std::runtime_error("Invalid use of skdTreeUtils::distance method: a void tree is detected.");
+	}
+	if(!dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))){
+		throw std::runtime_error("Invalid use of skdTreeUtils::distance method: a not surface patch tree is detected.");
+	}
 
-    static_cast<bitpit::SurfaceSkdTree*>(bvtree_)->findPointClosestCell(*P_, r, &id, &h);
-    return h;
+	static_cast<bitpit::SurfaceSkdTree*>(bvtree_)->findPointClosestCell(*P_, r, &id, &h);
+
+#if MIMMO_ENABLE_MPI
+	if (dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getProcessorCount() > 1){
+		MPI_Comm comm = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getCommunicator();
+
+		//Find the processor owner of the minimum absolute value
+		struct hloc{
+			double h;
+			int loc;
+		};
+		hloc values;
+		values.h = h;
+		int myrank = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getRank();
+		values.loc = myrank;
+		MPI_Allreduce(MPI_IN_PLACE, &values, 1, MPI_DOUBLE_INT, MPI_MINLOC, comm);
+
+		//Use the distance values from the owner of the minimum to the other processes
+		h = values.h;
+
+		//Fix id = bitpit::Cell::NULL_ID in case of another process owner of the element
+		if (values.loc != myrank)
+			id = bitpit::Cell::NULL_ID;
+
+	}
+#endif
+
+	return h;
 
 }
 
@@ -75,85 +102,115 @@ double distance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &i
  * is found return a default value of distance equal to 1.0e+18;
  * \param[in] P_ Pointer to coordinates of input point.
  * \param[in] bvtree_ Pointer to Boundary Volume Hierarchy tree that stores the geometry.
- * \param[out] id Label of the element found as minimum distance element in the bv-tree.
+ * \param[out] id Label of the element found as minimum distance element in the bv-tree. When parallel it returns SkdNode::NULL_ID if the element is on another process.
  * \param[out] n Pseudo-normal of the element (i.e. unit vector with direction (P-xP),
  * where P is the input point and xP the nearest point on the element (simplex) to
  * the projection of P on the plane of the simplex.
  * \param[in] r Length of the side of the box or radius of the sphere used to search. (The algorithm checks
  * every element encountered inside the box/sphere).
+ * \param[in] global if true the minimum distance over all the processes is returned
  * \return Signed distance of the input point from the patch in the bv-tree.
  */
-double signedDistance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, std::array<double,3> &n, double &r)
+double signedDistance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, std::array<double,3> &n, double &r, bool global)
 {
 
-    double h = 1.E+18;
+	double h = 1.E+18;
 
-    if(!bvtree_ ){
-    	throw std::runtime_error("Invalid use of skdTreeUtils::signedDistance method: a void tree is detected.");
-    }
-    const bitpit::SurfUnstructured *spatch = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()));
-    if(!spatch){
-    	throw std::runtime_error("Invalid use of skdTreeUtils::signedDistance method: a not surface patch tree is detected.");
-    }
+	if(!bvtree_ ){
+		throw std::runtime_error("Invalid use of skdTreeUtils::signedDistance method: a void tree is detected.");
+	}
+	const bitpit::SurfUnstructured *spatch = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()));
+	if(!spatch){
+		throw std::runtime_error("Invalid use of skdTreeUtils::signedDistance method: a not surface patch tree is detected.");
+	}
 
-    static_cast<bitpit::SurfaceSkdTree*>(bvtree_)->findPointClosestCell(*P_, r, &id, &h);
+	static_cast<bitpit::SurfaceSkdTree*>(bvtree_)->findPointClosestCell(*P_, r, &id, &h);
 
-    //signed distance only for 2D element patches(quads, pixels, triangles or segments)
-    if (id != bitpit::Cell::NULL_ID){
-    	const bitpit::Cell & cell = spatch->getCell(id);
-    	bitpit::ConstProxyVector<long> vertIds = cell.getVertexIds();
-    	dvecarr3E VS(vertIds.size());
-    	int count = 0;
-    	for (const auto & iV: vertIds){
-    		VS[count] = spatch->getVertexCoords(iV);
-    		++count;
-    	}
+	//signed distance only for 2D element patches(quads, pixels, triangles or segments)
+	if (id != bitpit::Cell::NULL_ID){
+		const bitpit::Cell & cell = spatch->getCell(id);
+		bitpit::ConstProxyVector<long> vertIds = cell.getVertexIds();
+		dvecarr3E VS(vertIds.size());
+		int count = 0;
+		for (const auto & iV: vertIds){
+			VS[count] = spatch->getVertexCoords(iV);
+			++count;
+		}
 
-    	darray3E xP = {{0.0,0.0,0.0}};
-    	darray3E normal= {{0.0,0.0,0.0}};
+		darray3E xP = {{0.0,0.0,0.0}};
+		darray3E normal= {{0.0,0.0,0.0}};
 
-    	if ( vertIds.size() == 3 ){ //TRIANGLE
-    		darray3E lambda;
-    		h = bitpit::CGElem::distancePointTriangle((*P_), VS[0], VS[1], VS[2],lambda);
-    		int count = 0;
-    		for(const auto &val: lambda){
-    			normal += val * spatch->evalVertexNormal(id,count) ;
-    			xP += val * VS[count];
-    			++count;
-    		}
-    	}else if ( vertIds.size() == 2 ){ //LINE/SEGMENT
-    		darray2E lambda;
-    		h = bitpit::CGElem::distancePointSegment((*P_), VS[0], VS[1], lambda);
-    		int count = 0;
-    		for(const auto &val: lambda){
-    			normal += val * spatch->evalVertexNormal(id,count) ;
-    			xP += val * VS[count];
-    			++count;
-    		}
-    	}else{ //GENERAL POLYGON
-    		std::vector<double> lambda;
-    		h = bitpit::CGElem::distancePointPolygon((*P_), VS,lambda);
-    		int count = 0;
-    		for(const auto &val: lambda){
-    			normal += val * spatch->evalVertexNormal(id,count) ;
-    			xP += val * VS[count];
-    			++count;
-    		}
-    	}
+		if ( vertIds.size() == 3 ){ //TRIANGLE
+			darray3E lambda;
+			h = bitpit::CGElem::distancePointTriangle((*P_), VS[0], VS[1], VS[2],lambda);
+			int count = 0;
+			for(const auto &val: lambda){
+				normal += val * spatch->evalVertexNormal(id,count) ;
+				xP += val * VS[count];
+				++count;
+			}
+		}else if ( vertIds.size() == 2 ){ //LINE/SEGMENT
+			darray2E lambda;
+			h = bitpit::CGElem::distancePointSegment((*P_), VS[0], VS[1], lambda);
+			int count = 0;
+			for(const auto &val: lambda){
+				normal += val * spatch->evalVertexNormal(id,count) ;
+				xP += val * VS[count];
+				++count;
+			}
+		}else{ //GENERAL POLYGON
+			std::vector<double> lambda;
+			h = bitpit::CGElem::distancePointPolygon((*P_), VS,lambda);
+			int count = 0;
+			for(const auto &val: lambda){
+				normal += val * spatch->evalVertexNormal(id,count) ;
+				xP += val * VS[count];
+				++count;
+			}
+		}
 
-    	double s =  sign( dotProduct(normal, (*P_) - xP) );
-    	if(s == 0.0)    s =1.0;
-    	h = s * h;
-    	//pseudo-normal (direction P and xP closest point on triangle)
-    	n = s * ((*P_) - xP);
-    	double normX = norm2(n);
-    	if(normX < 1.E-15){
-    		n = normal/norm2(normal);
-    	}else{
-    		n /= norm2(n);
-    	}
-    }//end if not id null
-    return h;
+		double s =  sign( dotProduct(normal, (*P_) - xP) );
+		if(s == 0.0)    s =1.0;
+		h = s * h;
+		//pseudo-normal (direction P and xP closest point on triangle)
+		n = s * ((*P_) - xP);
+		double normX = norm2(n);
+		if(normX < 1.E-15){
+			n = normal/norm2(normal);
+		}else{
+			n /= norm2(n);
+		}
+	}//end if not id null
+
+#if MIMMO_ENABLE_MPI
+	if (dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getProcessorCount() > 1){
+		MPI_Comm comm = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getCommunicator();
+
+		//Find the processor owner of the minimum absolute value
+		struct hloc{
+			double h;
+			int loc;
+		};
+		hloc values;
+		values.h = std::abs(h);
+		int myrank = dynamic_cast<const bitpit::SurfUnstructured*>(&(bvtree_->getPatch()))->getRank();
+		values.loc = myrank;
+		MPI_Allreduce(MPI_IN_PLACE, &values, 1, MPI_DOUBLE_INT, MPI_MINLOC, comm);
+
+		//Communicate the distance values from the owner of the minimum to the other processes
+		MPI_Bcast(&h, 1, MPI_DOUBLE, values.loc, comm);
+
+		//Fix id = bitpit::Cell::NULL_ID in case of another process owner of the element
+		if (values.loc != myrank)
+			id = bitpit::Cell::NULL_ID;
+
+		//Communicate the normal from the owner of the minimum to the other processes
+		MPI_Bcast(n.data(), 3, MPI_DOUBLE, values.loc, comm);
+
+	}
+#endif
+
+	return h;
 
 }
 
@@ -169,29 +226,31 @@ double signedDistance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, l
  */
 std::vector<long> selectByPatch(bitpit::PatchSkdTree *selection, bitpit::PatchSkdTree *target, double tol){
 
-    int nleafs = selection->getLeafCount();
-    int nnodess = selection->getNodeCount();
-    std::vector<const bitpit::SkdNode*> leafSelection(nleafs);
-    int count = 0;
-    for (int i=0; i<nnodess; i++){
-        if (selection->getNode(i).isLeaf()){
-            if (bitpit::CGElem::intersectBoxBox(selection->getNode(i).getBoxMin()-tol,
-                    selection->getNode(i).getBoxMax()+tol,
-                    target->getNode(0).getBoxMin(),
-                    target->getNode(0).getBoxMax() ) ){
-                leafSelection[count] = &(selection->getNode(i));
-                count++;
+	//TODO PARALLEL !!!
 
-            }
-        }
-    }
-    leafSelection.resize(count);
+	int nleafs = selection->getLeafCount();
+	int nnodess = selection->getNodeCount();
+	std::vector<const bitpit::SkdNode*> leafSelection(nleafs);
+	int count = 0;
+	for (int i=0; i<nnodess; i++){
+		if (selection->getNode(i).isLeaf()){
+			if (bitpit::CGElem::intersectBoxBox(selection->getNode(i).getBoxMin()-tol,
+					selection->getNode(i).getBoxMax()+tol,
+					target->getNode(0).getBoxMin(),
+					target->getNode(0).getBoxMax() ) ){
+				leafSelection[count] = &(selection->getNode(i));
+				count++;
+
+			}
+		}
+	}
+	leafSelection.resize(count);
 
 
-    std::vector<long> extracted;
-    extractTarget(target, leafSelection, extracted, tol);
+	std::vector<long> extracted;
+	extractTarget(target, leafSelection, extracted, tol);
 
-    return extracted;
+	return extracted;
 
 }
 
@@ -213,64 +272,66 @@ std::vector<long> selectByPatch(bitpit::PatchSkdTree *selection, bitpit::PatchSk
  */
 void extractTarget(bitpit::PatchSkdTree *target, const std::vector<const bitpit::SkdNode*> & leafSelection, std::vector<long> &extracted, double tol){
 
-    if(leafSelection.empty())   return;
-    std::size_t rootId  =0;
+	//TODO PARALLEL !!!
 
-    std::vector<std::size_t> candidates;
-    std::vector<std::pair< std::size_t, std::vector<const bitpit::SkdNode*> > > nodeStack;
+	if(leafSelection.empty())   return;
+	std::size_t rootId  =0;
 
-    std::vector<const bitpit::SkdNode*> tocheck;
-    for (int i=0; i<(int)leafSelection.size(); i++){
-        if (bitpit::CGElem::intersectBoxBox(leafSelection[i]->getBoxMin()-tol,
-                                            leafSelection[i]->getBoxMax()+tol,
-                                            target->getNode(rootId).getBoxMin(),
-                                            target->getNode(rootId).getBoxMax() ) )
-        {
-            tocheck.push_back(leafSelection[i]);
-        }
-    }
-    nodeStack.push_back(std::make_pair(rootId, tocheck) );
+	std::vector<std::size_t> candidates;
+	std::vector<std::pair< std::size_t, std::vector<const bitpit::SkdNode*> > > nodeStack;
 
-    while(!nodeStack.empty()){
+	std::vector<const bitpit::SkdNode*> tocheck;
+	for (int i=0; i<(int)leafSelection.size(); i++){
+		if (bitpit::CGElem::intersectBoxBox(leafSelection[i]->getBoxMin()-tol,
+				leafSelection[i]->getBoxMax()+tol,
+				target->getNode(rootId).getBoxMin(),
+				target->getNode(rootId).getBoxMax() ) )
+		{
+			tocheck.push_back(leafSelection[i]);
+		}
+	}
+	nodeStack.push_back(std::make_pair(rootId, tocheck) );
 
-        std::pair<std::size_t,  std::vector<const bitpit::SkdNode*> >  touple = nodeStack.back();
-        const SkdNode & node = target->getNode(touple.first);
-        nodeStack.pop_back();
+	while(!nodeStack.empty()){
+
+		std::pair<std::size_t,  std::vector<const bitpit::SkdNode*> >  touple = nodeStack.back();
+		const SkdNode & node = target->getNode(touple.first);
+		nodeStack.pop_back();
 
 
-        bool isLeaf = true;
-        for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
-            SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
-            std::size_t childId = node.getChildId(childLocation);
-            if (childId != SkdNode::NULL_ID) {
-                isLeaf = false;
-                tocheck.clear();
-                for (int i=0; i<(int)touple.second.size(); i++){
-                    if (bitpit::CGElem::intersectBoxBox(touple.second[i]->getBoxMin()-tol,
-                                                        touple.second[i]->getBoxMax()+tol,
-                                                        target->getNode(childId).getBoxMin(),
-                                                        target->getNode(childId).getBoxMax() ) )
-                    {
-                        tocheck.push_back(touple.second[i]);
-                    }
-                }
-                if(!tocheck.empty())    nodeStack.push_back(std::make_pair(childId, tocheck) );
-            }
-        }
+		bool isLeaf = true;
+		for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
+			SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
+			std::size_t childId = node.getChildId(childLocation);
+			if (childId != SkdNode::NULL_ID) {
+				isLeaf = false;
+				tocheck.clear();
+				for (int i=0; i<(int)touple.second.size(); i++){
+					if (bitpit::CGElem::intersectBoxBox(touple.second[i]->getBoxMin()-tol,
+							touple.second[i]->getBoxMax()+tol,
+							target->getNode(childId).getBoxMin(),
+							target->getNode(childId).getBoxMax() ) )
+					{
+						tocheck.push_back(touple.second[i]);
+					}
+				}
+				if(!tocheck.empty())    nodeStack.push_back(std::make_pair(childId, tocheck) );
+			}
+		}
 
-        if (isLeaf) {
-            candidates.push_back(touple.first);
-        }
-    }
+		if (isLeaf) {
+			candidates.push_back(touple.first);
+		}
+	}
 
-    std::unordered_set<long> cellExtracted;
-    for(const auto & nodeId: candidates){
-        const SkdNode & node = target->getNode(nodeId);
-        std::vector<long> cellids = node.getCells();
-        cellExtracted.insert(cellids.begin(), cellids.end());
-    }
+	std::unordered_set<long> cellExtracted;
+	for(const auto & nodeId: candidates){
+		const SkdNode & node = target->getNode(nodeId);
+		std::vector<long> cellids = node.getCells();
+		cellExtracted.insert(cellids.begin(), cellids.end());
+	}
 
-    extracted.insert(extracted.end(), cellExtracted.begin(), cellExtracted.end());
+	extracted.insert(extracted.end(), cellExtracted.begin(), cellExtracted.end());
 }
 
 /*!
@@ -284,133 +345,140 @@ void extractTarget(bitpit::PatchSkdTree *target, const std::vector<const bitpit:
  * \param[in] bvtree_ Pointer to Boundary Volume Hierarchy tree that stores the geometry.
  * \param[in] r Initial length of the sphere radius used to search. (The algorithm checks
  * every element encountered inside the sphere).
+ * \param[in] global if true the minimum distance over all the processes is returned
  * \return Coordinates of the projected point.
  */
-darray3E projectPoint( std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, double r )
+darray3E projectPoint( std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, double r, bool global )
 {
 
-    long         id;
-    darray3E     normal;
+	long         id;
+	darray3E     normal;
 
-    r = std::max(r, bvtree_->getPatch().getTol());
+	r = std::max(r, bvtree_->getPatch().getTol());
 
-    double         dist = 1.0e+18;
-    while (std::abs(dist) >= 1.0e+18){
-        //use method sphere by default
-        dist = signedDistance(P_, bvtree_, id, normal, r);
-        r *= 1.5;
-    }
+	double         dist = 1.0e+18;
+	while (std::abs(dist) >= 1.0e+18){
+		//use method sphere by default
+		dist = signedDistance(P_, bvtree_, id, normal, r, global);
+		r *= 1.5;
+	}
 
-    darray3E     projP = (*P_) - dist*normal;
+	darray3E     projP = (*P_) - dist*normal;
 
-    return (projP);
+	return (projP);
 }
 
+
 /*!
- * Given the specified point find the cell of a surface patch it is into.
+ * Given the specified point find the cell of a local partition of a surface patch it is into.
  * The method works only with trees generated with bitpit::SurfUnstructured mesh.
  *
  * \param[in] point is the point
  * \param[in] tree reference to SkdTree relative to the target surface geometry.
- * \return id of the geometry cell the point is into. Return bitpit::Cell::NULL_ID if no cell is found.
+ * \return id of the geometry cell the point is into. Return bitpit::Cell::NULL_ID if no cell is found on the local partition.
  */
 long locatePointOnPatch(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree)
 {
-    if(!dynamic_cast<const bitpit::SurfUnstructured*>(&(tree.getPatch()))){
-        throw std::runtime_error("Invalid use of skdTreeUtils::locatePointOnPatch method: a non surface patch or void patch was detected.");
-    }
-    // Initialize the cell id
-    long id = Cell::NULL_ID;
 
-    // Initialize the distance with an estimate
-    //
-    // The real distance will be lesser than or equal to the estimate.
-    std::size_t rootId = 0;
-    const SkdNode &root = tree.getNode(rootId);
-    double distance = root.evalPointMaxDistance(point);
+	if(!dynamic_cast<const bitpit::SurfUnstructured*>(&(tree.getPatch()))){
+		throw std::runtime_error("Invalid use of skdTreeUtils::locatePointOnPatch method: a non surface patch or void patch was detected.");
+	}
+	// Initialize the cell id
+	long id = Cell::NULL_ID;
 
-    // Get a list of candidates nodes
-    //
-    std::vector<std::size_t>    m_candidateIds;
+	// Initialize the distance with an estimate
+	//
+	// The real distance will be lesser than or equal to the estimate.
+	std::size_t rootId = 0;
+	const SkdNode &root = tree.getNode(rootId);
+	double distance = root.evalPointMaxDistance(point);
 
-    std::vector<std::size_t> nodeStack;
-    nodeStack.push_back(rootId);
-    while (!nodeStack.empty()) {
-        std::size_t nodeId = nodeStack.back();
-        const SkdNode &node = tree.getNode(nodeId);
-        nodeStack.pop_back();
+	// Get a list of candidates nodes
+	//
+	std::vector<std::size_t>    m_candidateIds;
 
-        // Do not consider nodes with a minimum distance greater than
-        // the distance estimate
-        double nodeMinDistance = node.evalPointMinDistance(point);
-        if (nodeMinDistance > distance) {
-            continue;
-        }
+	std::vector<std::size_t> nodeStack;
+	nodeStack.push_back(rootId);
+	while (!nodeStack.empty()) {
+		std::size_t nodeId = nodeStack.back();
+		const SkdNode &node = tree.getNode(nodeId);
+		nodeStack.pop_back();
 
-        // Update the distance estimate
-        //
-        // The real distance will be lesser than or equal to the
-        // estimate.
-        double nodeMaxDistance = node.evalPointMaxDistance(point);
-        distance = std::min(nodeMaxDistance, distance);
+		// Do not consider nodes with a minimum distance greater than
+		// the distance estimate
+		double nodeMinDistance = node.evalPointMinDistance(point);
+		if (nodeMinDistance > distance) {
+			continue;
+		}
 
-        // If the node is a leaf add it to the candidates, otherwise
-        // add its children to the stack.
-        bool isLeaf = true;
-        for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
-            SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
-            std::size_t childId = node.getChildId(childLocation);
-            if (childId != SkdNode::NULL_ID) {
-                isLeaf = false;
-                nodeStack.push_back(childId);
-            }
-        }
+		// Update the distance estimate
+		//
+		// The real distance will be lesser than or equal to the
+		// estimate.
+		double nodeMaxDistance = node.evalPointMaxDistance(point);
+		distance = std::min(nodeMaxDistance, distance);
 
-        if (isLeaf) {
-            m_candidateIds.push_back(nodeId);
-        }
-    }
+		// If the node is a leaf add it to the candidates, otherwise
+		// add its children to the stack.
+		bool isLeaf = true;
+		for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
+			SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
+			std::size_t childId = node.getChildId(childLocation);
+			if (childId != SkdNode::NULL_ID) {
+				isLeaf = false;
+				nodeStack.push_back(childId);
+			}
+		}
 
-    // Process the candidates and find which cell contains the point
-    for (std::size_t k = 0; k < m_candidateIds.size(); ++k) {
+		if (isLeaf) {
+			m_candidateIds.push_back(nodeId);
+		}
+	}
 
-        // Evaluate the min distance between all cells in the candidate node
-        std::size_t nodeId = m_candidateIds[k];
-        const SkdNode &node = tree.getNode(nodeId);
+	// Process the candidates and find which cell contains the point
+	for (std::size_t k = 0; k < m_candidateIds.size(); ++k) {
 
-        bitpit::ElementType eltype ;
-        bool checkBelong;
-        for(const auto & cellId : node.getCells() ){
-            eltype = tree.getPatch().getCell(cellId).getType();
-            auto vList = tree.getPatch().getCell(cellId).getVertexIds();
-            dvecarr3E vertCoords(vList.size());
-            int counterList = 0;
-            for(const auto & idV : vList){
-                vertCoords[counterList] = tree.getPatch().getVertexCoords(idV);
-                ++counterList;
-            }
-            switch(eltype){
-                case ElementType::LINE:
-                    checkBelong = mimmoCGUtils::isPointInsideSegment(point, vertCoords[0], vertCoords[1]);
-                    break;
-                case ElementType::TRIANGLE:
-                    checkBelong = mimmoCGUtils::isPointInsideTriangle(point, vertCoords[0], vertCoords[1], vertCoords[2]);
-                    break;
-                case ElementType::PIXEL:
-                case ElementType::QUAD:
-                case ElementType::POLYGON:
-                    checkBelong = mimmoCGUtils::isPointInsidePolygon(point, vertCoords);
-                    break;
-                default:
-                    throw std::runtime_error("Not supported cell type");
-                    break;
-            }
-            if (checkBelong) {
-                id       = cellId;
-            }
-        }
-    }
-    return id;
+		// Evaluate the min distance between all cells in the candidate node
+		std::size_t nodeId = m_candidateIds[k];
+		const SkdNode &node = tree.getNode(nodeId);
+
+		bitpit::ElementType eltype ;
+		bool checkBelong;
+		for(const auto & cellId : node.getCells() ){
+			//Check only if is interior
+			if (tree.getPatch().getCell(cellId).isInterior()){
+				eltype = tree.getPatch().getCell(cellId).getType();
+				auto vList = tree.getPatch().getCell(cellId).getVertexIds();
+				dvecarr3E vertCoords(vList.size());
+				int counterList = 0;
+				for(const auto & idV : vList){
+					vertCoords[counterList] = tree.getPatch().getVertexCoords(idV);
+					++counterList;
+				}
+				switch(eltype){
+				case ElementType::LINE:
+					checkBelong = mimmoCGUtils::isPointInsideSegment(point, vertCoords[0], vertCoords[1]);
+					break;
+				case ElementType::TRIANGLE:
+					checkBelong = mimmoCGUtils::isPointInsideTriangle(point, vertCoords[0], vertCoords[1], vertCoords[2]);
+					break;
+				case ElementType::PIXEL:
+				case ElementType::QUAD:
+				case ElementType::POLYGON:
+					checkBelong = mimmoCGUtils::isPointInsidePolygon(point, vertCoords);
+					break;
+				default:
+					throw std::runtime_error("Not supported cell type");
+					break;
+				}
+				if (checkBelong) {
+					id       = cellId;
+				}
+			}
+		}
+	}
+
+	return id;
 }
 
 /*!
@@ -419,77 +487,103 @@ long locatePointOnPatch(const std::array<double, 3> &point, bitpit::PatchSkdTree
  *
  * \param[in] point is the target point
  * \param[in] tree reference to SkdTree relative to the target mesh (can be a surface or a volume).
- * \return id of the geometry cell the point is close. Return bitpit::Cell::NULL_ID if no cell is found.
+ * \param[in] global if true the minimum distance over all the processes is returned
+ * \return id of the geometry cell the point is close. Return bitpit::Cell::NULL_ID if no cell is found on local partition.
  */
-long closestCellToPoint(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree)
+long closestCellToPoint(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree, bool global)
 {
-    // Initialize the distance with an estimate
-    //
-    // The real distance will be lesser than or equal to the estimate.
-    std::size_t rootId = 0;
-    const SkdNode &root = tree.getNode(rootId);
-    double distance = root.evalPointMaxDistance(point);
 
-    // Get a list of candidates nodes
-    //
-    std::vector<std::size_t>    m_candidateIds;
+	// Initialize the distance with an estimate
+	//
+	// The real distance will be lesser than or equal to the estimate.
+	std::size_t rootId = 0;
+	const SkdNode &root = tree.getNode(rootId);
+	double distance = root.evalPointMaxDistance(point);
 
-    std::vector<std::size_t> nodeStack;
-    nodeStack.push_back(rootId);
-    while (!nodeStack.empty()) {
-        std::size_t nodeId = nodeStack.back();
-        const SkdNode &node = tree.getNode(nodeId);
-        nodeStack.pop_back();
+	// Get a list of candidates nodes
+	//
+	std::vector<std::size_t>    m_candidateIds;
 
-        // Do not consider nodes with a minimum distance greater than
-        // the distance estimate
-        double nodeMinDistance = node.evalPointMinDistance(point);
-        if (nodeMinDistance > distance) {
-            continue;
-        }
+	std::vector<std::size_t> nodeStack;
+	nodeStack.push_back(rootId);
+	while (!nodeStack.empty()) {
+		std::size_t nodeId = nodeStack.back();
+		const SkdNode &node = tree.getNode(nodeId);
+		nodeStack.pop_back();
 
-        // Update the distance estimate
-        //
-        // The real distance will be lesser than or equal to the
-        // estimate.
-        double nodeMaxDistance = node.evalPointMaxDistance(point);
-        distance = std::min(nodeMaxDistance, distance);
+		// Do not consider nodes with a minimum distance greater than
+		// the distance estimate
+		double nodeMinDistance = node.evalPointMinDistance(point);
+		if (nodeMinDistance > distance) {
+			continue;
+		}
 
-        // If the node is a leaf add it to the candidates, otherwise
-        // add its children to the stack.
-        bool isLeaf = true;
-        for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
-            SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
-            std::size_t childId = node.getChildId(childLocation);
-            if (childId != SkdNode::NULL_ID) {
-                isLeaf = false;
-                nodeStack.push_back(childId);
-            }
-        }
+		// Update the distance estimate
+		//
+		// The real distance will be lesser than or equal to the
+		// estimate.
+		double nodeMaxDistance = node.evalPointMaxDistance(point);
+		distance = std::min(nodeMaxDistance, distance);
 
-        if (isLeaf) {
-            m_candidateIds.push_back(nodeId);
-        }
-    }
+		// If the node is a leaf add it to the candidates, otherwise
+		// add its children to the stack.
+		bool isLeaf = true;
+		for (int i = SkdNode::CHILD_BEGIN; i != SkdNode::CHILD_END; ++i) {
+			SkdNode::ChildLocation childLocation = static_cast<SkdNode::ChildLocation>(i);
+			std::size_t childId = node.getChildId(childLocation);
+			if (childId != SkdNode::NULL_ID) {
+				isLeaf = false;
+				nodeStack.push_back(childId);
+			}
+		}
 
-    // Process the candidates and find which cell is the nearest to the target point
-    double distanceMin = std::numeric_limits<double>::max();
-    distance = 1.0E18;
-    // Initialize the cell id
-    long id = Cell::NULL_ID;
-    long idwork;
+		if (isLeaf) {
+			m_candidateIds.push_back(nodeId);
+		}
+	}
 
-    for (std::size_t cand : m_candidateIds) {
-        tree.getNode(cand).findPointClosestCell(point, &idwork, &distance);
-        if(distance < distanceMin){
-            distanceMin = distance;
-            id = idwork;
-        }
-    }
-    return id;
+	// Process the candidates and find which cell is the nearest to the target point
+	double distanceMin = std::numeric_limits<double>::max();
+	distance = 1.0E18;
+	// Initialize the cell id
+	long id = Cell::NULL_ID;
+	long idwork;
+
+	for (std::size_t cand : m_candidateIds) {
+		tree.getNode(cand).findPointClosestCell(point, &idwork, &distance);
+		if(distance < distanceMin){
+			distanceMin = distance;
+			id = idwork;
+		}
+	}
+
+#if MIMMO_ENABLE_MPI
+if (dynamic_cast<const bitpit::SurfUnstructured*>(&(tree.getPatch()))->getProcessorCount() > 1){
+	MPI_Comm comm = dynamic_cast<const bitpit::SurfUnstructured*>(&(tree.getPatch()))->getCommunicator();
+
+	//Find the processor owner of the minimum absolute value
+	struct hloc{
+		double h;
+		int loc;
+	};
+	hloc values;
+	values.h = distance;
+	int myrank = dynamic_cast<const bitpit::SurfUnstructured*>(&(tree.getPatch()))->getRank();
+	values.loc = myrank;
+	MPI_Allreduce(MPI_IN_PLACE, &values, 1, MPI_DOUBLE_INT, MPI_MINLOC, comm);
+
+	//Use the distance values from the owner of the minimum to the other processes
+	distance = values.h;
+
+	//Fix id = bitpit::Cell::NULL_ID in case of another process owner of the element
+	if (values.loc != myrank)
+		id = bitpit::Cell::NULL_ID;
+
 }
+#endif
 
-
+return id;
+}
 
 }
 

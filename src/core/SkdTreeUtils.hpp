@@ -37,14 +37,55 @@ namespace mimmo{
  * \ingroup core
  */
 namespace skdTreeUtils{
-
-    double distance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, double &r);
-    double signedDistance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, std::array<double,3> &n, double &r);
+    double distance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, double &r, bool global = true);
+    double signedDistance(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, long &id, std::array<double,3> &n, double &r, bool global = true);
     std::vector<long> selectByPatch(bitpit::PatchSkdTree *selection, bitpit::PatchSkdTree *target, double tol = 1.0e-04);
     void extractTarget(bitpit::PatchSkdTree *target, const std::vector<const bitpit::SkdNode*> & leafSelection, std::vector<long> &extracted, double tol);
-    std::array<double,3> projectPoint(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, double r_ = 1.0e+18);
+    std::array<double,3> projectPoint(std::array<double,3> *P_, bitpit::PatchSkdTree *bvtree_, double r_ = 1.0e+18, bool global = true);
     long locatePointOnPatch(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree);
-    long closestCellToPoint(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree);
+    long closestCellToPoint(const std::array<double, 3> &point, bitpit::PatchSkdTree &tree, bool global = true);
+
+    // Cloud version of skdtree utils methods
+    //    std::vector<double> distances(std::vector<std::array<double,3>> *P_, bitpit::PatchSkdTree *bvtree_, long &id, double &r);
+
+
+
+//#if MIMMO_ENABLE_MPI
+//    inline void MPI_MAXABS(void* invec, void* inoutvec, int *len, MPI_Datatype *datatype)
+//    {
+//    	MPI_Aint lb, extent;
+//    	MPI_Type_get_true_extent(*datatype, &lb, &extent);
+//
+//    	double* a = reinterpret_cast <double*> (reinterpret_cast <char*>(inoutvec) + lb);
+//    	double* b = reinterpret_cast <double*> (reinterpret_cast <char*>(invec) + lb);
+//
+//    	for (int i = 0; i != *len; ++i)
+//    	{
+//    		if (std::abs(a[i]) > std::abs(b[i]))
+//    			a[i] = a[i];
+//    		else
+//    			a[i] = b[i];
+//    	}
+//    }
+//
+//    inline void MPI_MINABS(void* invec, void* inoutvec, int *len, MPI_Datatype *datatype)
+//    {
+//    	MPI_Aint lb, extent;
+//    	MPI_Type_get_true_extent(*datatype, &lb, &extent);
+//
+//    	double* a = reinterpret_cast <double*> (reinterpret_cast <char*>(inoutvec) + lb);
+//    	double* b = reinterpret_cast <double*> (reinterpret_cast <char*>(invec) + lb);
+//
+//    	for (int i = 0; i != *len; ++i)
+//    	{
+//    		if (std::abs(a[i]) < std::abs(b[i]))
+//    			a[i] = a[i];
+//    		else
+//    			a[i] = b[i];
+//    	}
+//    }
+//#endif
+
 }; //end namespace skdTreeUtils
 
 } //end namespace mimmo

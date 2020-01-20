@@ -1408,10 +1408,13 @@ PropagateField<NCOMP>::communicatePointGhostData(MimmoPiercedVector<std::array<d
         m_pointGhostCommunicators[geo]->addData(m_pointGhostStreamers[geo].get());
     }
 
-    // Send data
-    m_pointGhostCommunicators[geo]->startAllExchanges();
-    // Receive data
-    m_pointGhostCommunicators[geo]->completeAllExchanges();
+//TODO - TEMPORARY FOR NOW - PERFORM TWICE TO OVERRIDE INTERFACE NODE MISLEADING.
+    for(int i=0; i<2; ++i){
+        // Send data
+        m_pointGhostCommunicators[geo]->startAllExchanges();
+        // Receive data
+        m_pointGhostCommunicators[geo]->completeAllExchanges();
+    }
 }
 
 #endif
